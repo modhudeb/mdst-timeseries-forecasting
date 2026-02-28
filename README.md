@@ -11,14 +11,14 @@ Forecasting objective used across notebooks:
 
 | Notebook | Dataset | Data shape from `df.info()` | Variables | Time resolution note |
 |---|---|---|---:|---|
-| `mdst_exchange_new.ipynb` | Exchange Rate | 7588 x 8 | 8 | Daily (24 steps = 24 days in notebook) |
-| `mdst_electricity.ipynb` | Electricity | 26304 x 321 | 321 | 24 steps marked as 6 hours in notebook |
-| `mdst_solar_power.ipynb` | Solar Power | 52560 x 137 | 137 | 24 steps marked as 4 hours in notebook |
-| `mdst_traffic.ipynb` | Traffic | 17544 x 862 | 862 | 24 steps marked as 2 hours in notebook |
+| `mdst_exchange_new.ipynb` | Exchange Rate | 7588 x 8 | 8 | Daily (24 steps = 24 days ) |
+| `mdst_electricity.ipynb` | Electricity | 26304 x 321 | 321 | 24 steps marked as 6 hours  |
+| `mdst_solar_power.ipynb` | Solar Power | 52560 x 137 | 137 | 24 steps marked as 4 hours  |
+| `mdst_traffic.ipynb` | Traffic | 17544 x 862 | 862 | 24 steps marked as 2 hours  |
 
 ## Model Architecture Figure
 
-Architecture image (moved to folder and linked):
+Architecture image:
 
 ![PatchedTalNet Architecture](./assets/images/PatchedTalnet_Architecture.png)
 
@@ -91,7 +91,6 @@ Why this helps:
 
 ## Accuracy Table (Detailed; From Notebook Outputs)
 
-Metrics shown exactly as printed in each notebook evaluation cell.
 
 | Dataset | Step | R2 | RMSE | MAE | MSE | SMAPE | RSE | CORR |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
