@@ -111,7 +111,7 @@ Why this helps:
 | Traffic | 12 | 0.7754 | 0.0267 | 0.0128 | 0.0007 | 30.02% | 0.4740 | 0.8805 |
 | Traffic | 24 | 0.7705 | 0.0270 | 0.0130 | 0.0007 | 30.08% | 0.4791 | 0.8774 |
 
-## Comparison Table A (Step-24 Across the Four Notebooks)
+## Result Table (Step-24 Across the Four Notebooks)
 
 | Dataset | R2 | RMSE | MAE | MSE | SMAPE | RSE | CORR |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -120,7 +120,7 @@ Why this helps:
 | Solar | 0.8531 | 0.0955 | 0.0541 | 0.0091 | 138.64% | 0.3833 | 0.9277 |
 | Traffic | 0.7705 | 0.0270 | 0.0130 | 0.0007 | 30.08% | 0.4791 | 0.8774 |
 
-## Comparison Table B (External Horizon-24 Results on Exchange)
+## Comparison Table (External Horizon-24 Results on Exchange)
 
 The table below summarizes horizon-24 Exchange results reported in MDST-GNN (Table 3), where metrics are RRMSE and CORR.
 
@@ -139,10 +139,6 @@ The table below summarizes horizon-24 Exchange results reported in MDST-GNN (Tab
 | StemGNN | 0.0448 | 0.9917 |
 | MDST-GNN | 0.0425 | 0.9934 |
 
-Comparison caution:
-- Table A uses this repository's metric set (`R2/RMSE/MAE/MSE/SMAPE/RSE/CORR`).
-- Table B uses published `RRMSE/CORR` from a different experimental protocol.
-- These are useful for context, but not strict apples-to-apples ranking.
 
 ## Authentic Dataset Sources
 
