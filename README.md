@@ -1,188 +1,185 @@
-# MDST Time Series Forecasting Project
+﻿# MDST Time Series Forecasting with PatchedTalNet
 
-This repository contains implementation of advanced time series forecasting models applied to multiple datasets using TensorFlow and Keras. The project features a novel architecture called **TalNetV2**, a custom-built enhanced version of TalNet with significant improvements, alongside a Stacked Bidirectional LSTM implementation. TalNetV2 represents an original contribution to multivariate time series prediction, incorporating advanced features not present in the original TalNet architecture.
+This repository contains four notebook experiments that apply a custom neural architecture (PatchedTalNet) to multivariate time series forecasting.
 
-## 📊 Datasets
+Forecasting objective used across notebooks:
+- Input context window: 168 time steps
+- Forecast horizon: 24 time steps
+- Multi-output prediction over all variables
 
-The project works with multiple time series datasets:
-- **Exchange Rate Data**: Currency exchange rates for multiple currencies
-- **Electricity Consumption Data**
-- **Solar Power Generation Data**
-- **Traffic Flow Data**
+## Notebooks Covered
 
-### Exchange Rate Dataset Details
-- **Format**: Time series data of multiple currency exchange rates
-- **Features**: Multiple currency pairs
-- **Frequency**: Daily data
-- **Storage**: Compressed format (.gz)
+| Notebook | Dataset | Data shape from `df.info()` | Variables | Time resolution note |
+|---|---|---|---:|---|
+| `mdst_exchange_new.ipynb` | Exchange Rate | 7588 x 8 | 8 | Daily (24 steps = 24 days in notebook) |
+| `mdst_electricity.ipynb` | Electricity | 26304 x 321 | 321 | 24 steps marked as 6 hours in notebook |
+| `mdst_solar_power.ipynb` | Solar Power | 52560 x 137 | 137 | 24 steps marked as 4 hours in notebook |
+| `mdst_traffic.ipynb` | Traffic | 17544 x 862 | 862 | 24 steps marked as 2 hours in notebook |
 
-## 🏗️ Model Architectures
+## Model Architecture Figure
 
-### 1. Stacked Bidirectional LSTM
-A deep learning model featuring:
-- Bidirectional LSTM layers for capturing temporal dependencies
-- Layer normalization for stable training
-- Configurable stack depth
-- Dropout for regularization
-- Dense layers for final prediction
+Architecture image (moved to folder and linked):
 
-Key Parameters:
-```python
-- hidden_dim: Hidden layer dimensions
-- dropout_rate: Dropout probability
-- n_stack: Number of stacked LSTM layers
-- bi: Boolean for bidirectional setup
-```
+![PatchedTalNet Architecture](./assets/images/PatchedTalnet_Architecture.png)
 
-### 2. TalNetV2 (Original Contribution)
-A novel architecture that significantly enhances the original TalNet model. This custom-built implementation introduces several innovative features:
-- **Advanced Node Embeddings**: Custom node embedding layer for enhanced feature representation
-- **Causal Temporal Convolution**: Specialized convolution layer for preserving temporal causality
-- **Hybrid Architecture**: Unique combination of LSTM and Transformer components
-- **Multi-head Self-attention**: Advanced attention mechanism for capturing complex dependencies
-- **Hierarchical Processing**: Layered approach combining temporal and spatial features
-- **Adaptive Layer Normalization**: Improved training stability and performance
-- **Flexible Stack Configuration**: Configurable transformer blocks for model scaling
+## Common Pipeline Used in the Four Notebooks
 
-The architecture represents a significant improvement over the original TalNet, specifically designed for complex multivariate time series forecasting tasks.
+1. Data loading from compressed `.txt.gz` files.
+2. Chronological split with `split_ratio = 0.7`.
+3. Normalization with train-only fit (`MinMaxScaler`), then test transform.
+4. Sliding window dataset creation:
+   - `X`: `[window_size, n_nodes] = [168, n_nodes]`
+   - `Y`: `[forecast_horizon, n_nodes] = [24, n_nodes]`
+5. TensorFlow input pipeline with batch + prefetch.
+6. Training with early stopping based on validation MAE.
 
-Key Components:
-```python
-- n_heads: Number of attention heads
-- node_emb_dim: Node embedding dimensions
-- temporal_conv: Causal convolution layer
-- transformer_blocks: Self-attention and feed-forward layers
-```
+## PatchedTalNet: Easy-English Signal Explanation
 
-## 🛠️ Implementation Details
+The same core architecture is used in all four notebooks.
 
-### Data Processing
-1. **Window Creation**
-   - Sliding window approach
-   - Configurable window size and forecast horizon
-   - TensorFlow data pipeline optimization
+### 1) RevIN (Reversible Instance Normalization)
 
-2. **Data Split**
-   - Train-test split ratio: 80:20
-   - Batch processing with prefetch
+What it does to input signals:
+- For each sample and each variable, computes mean and standard deviation across time.
+- Normalizes the input to reduce scale and level shift.
+- Saves normalization statistics.
+- After prediction, applies inverse transform (denormalization) to return forecasts to the original scale.
 
-### Model Configuration
-```python
-Common Parameters:
-- window_size = 168
-- forecast_horizon = 24
-- batch_size = 8
-```
+Why this helps:
+- Many time series are non-stationary (level and volatility drift over time).
+- RevIN improves training stability by separating pattern learning from temporary scale drift.
 
-### Training Setup
-- **Optimizer**: Adam
-- **Loss Function**: Mean Squared Error (MSE)
-- **Metrics**: Mean Absolute Error (MAE)
-- **Early Stopping**: 
-  - Monitor: validation MAE
-  - Patience: 5 epochs
-  - Best weights restoration
+### 2) PatchEmbedding
 
-## 📈 Evaluation Metrics
+What it does to input signals:
+- Cuts a long sequence into overlapping local windows (patches).
+- Flattens each patch and projects it to a fixed embedding dimension (`d_model`).
+- Adds learnable positional embedding to preserve order information.
 
-The models are evaluated using comprehensive metrics:
-1. **R²**: Coefficient of determination
-2. **RMSE**: Root Mean Square Error
-3. **MAE**: Mean Absolute Error
-4. **MSE**: Mean Square Error
-5. **SMAPE**: Symmetric Mean Absolute Percentage Error
-6. **RSE**: Root Square Error
-7. **CORR**: Correlation coefficient
+Why this helps:
+- Reduces sequence length for attention.
+- Preserves local temporal behavior before global modeling.
 
-Evaluation is performed at different prediction horizons:
-- 3-step ahead
-- 6-step ahead
-- 12-step ahead
-- 24-step ahead
+Concrete example from Exchange notebook:
+- Input: 168 steps, 8 variables
+- `patch_len=24`, `stride=8`
+- Number of patches: `1 + (168 - 24) / 8 = 19`
+- Each patch vector before projection: `24 * 8 = 192`
+- Token sequence after projection: 19 tokens in `d_model` space
 
-## 💾 Model Persistence
+### 3) Transformer Blocks + BiLSTM Pooling
 
-Models can be saved and loaded using TensorFlow's Keras API:
-```python
-# Save model
-model.save('path/to/model.keras')
+What it does to input signals:
+- Transformer self-attention connects each patch with all other patches.
+- Residual + normalization + feed-forward blocks refine the representation.
+- A BiLSTM pooling layer compresses the patch-token sequence into a compact global summary vector.
+- Dense head maps summary vector to `24 x n_nodes` outputs.
+- RevIN denormalization maps predictions back to original units.
 
-# Load model
-model = load_model('path/to/model.keras', custom_objects={'TalNetV2': TalNetV2})
-```
+Why this helps:
+- Transformer captures long-range interactions.
+- BiLSTM pooling provides strong sequence summarization before regression.
 
-## 📊 Visualization Features
+## Per-Notebook Model Configuration
 
-The project includes comprehensive visualization tools:
-1. Time series plots
-2. Correlation heatmaps
-3. Rolling statistics
-4. Seasonal decomposition
-5. Training history plots (loss and metrics)
-6. Day-of-week analysis
-7. Distribution histograms
+| Dataset Notebook | `patch_len` | `patch_stride` | `d_model` | `n_heads` | `n_stack` | Loss | Optimizer LR |
+|---|---:|---:|---:|---:|---:|---|---:|
+| Exchange (`mdst_exchange_new.ipynb`) | 24 | 8 | 512 | 32 | 5 | Huber (`delta=1.0`) | `1e-5` |
+| Electricity (`mdst_electricity.ipynb`) | 16 | 8 | 64 | 4 | 2 | MSE | `3e-4` |
+| Solar (`mdst_solar_power.ipynb`) | 16 | 4 | 128 | 8 | 1 | Huber (`delta=1.0`) | `1e-5` |
+| Traffic (`mdst_traffic.ipynb`) | 16 | 8 | 64 | 4 | 2 | Huber (`delta=1.0`) | `3e-4` |
 
-## 🔍 Exploratory Data Analysis
+## Accuracy Table (Detailed; From Notebook Outputs)
 
-The notebooks include detailed EDA:
-- Temporal pattern analysis
-- Correlation analysis between variables
-- Rolling statistics computation
-- Seasonal decomposition
-- Distribution analysis
-- Day-of-week patterns
+Metrics shown exactly as printed in each notebook evaluation cell.
 
-## 🚀 Getting Started
+| Dataset | Step | R2 | RMSE | MAE | MSE | SMAPE | RSE | CORR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Exchange | 3  | 0.9858 | 0.0410 | 0.0300 | 0.0017 | 6.22% | 0.1190 | 0.9930 |
+| Exchange | 6  | 0.9845 | 0.0429 | 0.0313 | 0.0018 | 6.49% | 0.1245 | 0.9923 |
+| Exchange | 12 | 0.9825 | 0.0457 | 0.0334 | 0.0021 | 6.80% | 0.1324 | 0.9913 |
+| Exchange | 24 | 0.9779 | 0.0514 | 0.0373 | 0.0026 | 7.53% | 0.1487 | 0.9891 |
+| Electricity | 3  | 0.9159 | 0.0567 | 0.0375 | 0.0032 | 13.61% | 0.2900 | 0.9571 |
+| Electricity | 6  | 0.9148 | 0.0571 | 0.0377 | 0.0033 | 13.67% | 0.2918 | 0.9565 |
+| Electricity | 12 | 0.9135 | 0.0575 | 0.0380 | 0.0033 | 13.73% | 0.2941 | 0.9558 |
+| Electricity | 24 | 0.9111 | 0.0583 | 0.0384 | 0.0034 | 13.82% | 0.2982 | 0.9545 |
+| Solar | 3  | 0.9217 | 0.0697 | 0.0396 | 0.0049 | 134.93% | 0.2799 | 0.9638 |
+| Solar | 6  | 0.9144 | 0.0729 | 0.0415 | 0.0053 | 135.47% | 0.2926 | 0.9601 |
+| Solar | 12 | 0.8957 | 0.0805 | 0.0458 | 0.0065 | 136.61% | 0.3230 | 0.9510 |
+| Solar | 24 | 0.8531 | 0.0955 | 0.0541 | 0.0091 | 138.64% | 0.3833 | 0.9277 |
+| Traffic | 3  | 0.7811 | 0.0264 | 0.0127 | 0.0007 | 30.40% | 0.4679 | 0.8838 |
+| Traffic | 6  | 0.7789 | 0.0265 | 0.0127 | 0.0007 | 30.16% | 0.4702 | 0.8826 |
+| Traffic | 12 | 0.7754 | 0.0267 | 0.0128 | 0.0007 | 30.02% | 0.4740 | 0.8805 |
+| Traffic | 24 | 0.7705 | 0.0270 | 0.0130 | 0.0007 | 30.08% | 0.4791 | 0.8774 |
 
-1. **Environment Setup**
-   ```python
-   # Required Libraries
-   import numpy as np
-   import pandas as pd
-   import tensorflow as tf
-   import matplotlib.pyplot as plt
-   import seaborn as sns
-   ```
+## Comparison Table A (Step-24 Across the Four Notebooks)
 
-2. **Data Preparation**
-   ```python
-   # Load and preprocess data
-   df = pd.read_csv('path/to/data.gz', compression='gzip')
-   ```
+| Dataset | R2 | RMSE | MAE | MSE | SMAPE | RSE | CORR |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Exchange | 0.9779 | 0.0514 | 0.0373 | 0.0026 | 7.53% | 0.1487 | 0.9891 |
+| Electricity | 0.9111 | 0.0583 | 0.0384 | 0.0034 | 13.82% | 0.2982 | 0.9545 |
+| Solar | 0.8531 | 0.0955 | 0.0541 | 0.0091 | 138.64% | 0.3833 | 0.9277 |
+| Traffic | 0.7705 | 0.0270 | 0.0130 | 0.0007 | 30.08% | 0.4791 | 0.8774 |
 
-3. **Model Training**
-   ```python
-   # Create and train model
-   model = TalNetV2(params...)
-   model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-   model.fit(train_dataset, validation_data=test_dataset, epochs=50)
-   ```
+## Comparison Table B (External Horizon-24 Results on Exchange)
 
-## 📈 Performance Analysis
+The table below summarizes horizon-24 Exchange results reported in MDST-GNN (Table 3), where metrics are RRMSE and CORR.
 
-The models are evaluated on multiple horizons with metrics including:
-- R² score for goodness of fit
-- RMSE for prediction accuracy
-- MAE for absolute error measurement
-- SMAPE for percentage error
-- Correlation coefficients
+| Model | Exchange H=24 RRMSE | Exchange H=24 CORR |
+|---|---:|---:|
+| AR | 0.1140 | 0.9531 |
+| LRidge | 0.0698 | 0.9754 |
+| LSVR | 0.0745 | 0.9749 |
+| GP | 0.0667 | 0.9785 |
+| SETAR | 0.0844 | 0.9725 |
+| MLP | 0.1001 | 0.9698 |
+| RNN-GRU | 0.0580 | 0.9810 |
+| LSTNet | 0.0704 | 0.9751 |
+| TPA-LSTM | 0.0593 | 0.9796 |
+| MTGNN | 0.0506 | 0.9862 |
+| StemGNN | 0.0448 | 0.9917 |
+| MDST-GNN | 0.0425 | 0.9934 |
 
-## 🤝 Contributing
+Comparison caution:
+- Table A uses this repository's metric set (`R2/RMSE/MAE/MSE/SMAPE/RSE/CORR`).
+- Table B uses published `RRMSE/CORR` from a different experimental protocol.
+- These are useful for context, but not strict apples-to-apples ranking.
 
-Feel free to:
-1. Fork the repository
-2. Create a feature branch
-3. Submit pull requests
-4. Report issues
-5. Suggest improvements
+## Authentic Dataset Sources
 
-## 📝 License
+### Benchmark dataset repository (canonical format used in many papers)
+- https://github.com/laiguokun/multivariate-time-series-data
+- Exchange: https://github.com/laiguokun/multivariate-time-series-data/tree/master/exchange_rate
+- Electricity: https://github.com/laiguokun/multivariate-time-series-data/tree/master/electricity
+- Solar: https://github.com/laiguokun/multivariate-time-series-data/tree/master/solar-energy
+- Traffic: https://github.com/laiguokun/multivariate-time-series-data/tree/master/traffic
 
-This project is open-source and available for academic and research purposes.
+### Direct mirror links used in notebook download comments
+- Exchange: https://raw.githubusercontent.com/yiminghzc/MDST-GNN/main/MDST-GNN/data/exchange_rate.txt.gz
+- Electricity: https://raw.githubusercontent.com/yiminghzc/MDST-GNN/main/MDST-GNN/data/electricity.txt.gz
+- Solar: https://raw.githubusercontent.com/yiminghzc/MDST-GNN/main/MDST-GNN/data/solar_AL.txt.gz
+- Traffic: https://raw.githubusercontent.com/yiminghzc/MDST-GNN/main/MDST-GNN/data/traffic.txt.gz
 
-## 🔗 References
+### Original raw data sources referenced by benchmark repository
+- Electricity (UCI): https://archive.ics.uci.edu/ml/datasets/ElectricityLoadDiagrams20112014
+- Traffic (PeMS): http://pems.dot.ca.gov
+- Solar (NREL): http://www.nrel.gov/grid/solar-power-data.html
 
-- TalNet architecture
-- Time series forecasting methodologies
-- Deep learning for temporal data
-- Multi-horizon prediction techniques
+## Table Reference Map
+
+| Table | Content | Primary source |
+|---|---|---|
+| Notebooks Covered | Dataset sizes and notebook coverage | `df.info()` outputs in the four notebooks |
+| Per-Notebook Model Configuration | Hyperparameters and losses | `model = PatchedTalNet(...)` and `model.compile(...)` cells in notebooks |
+| Accuracy Table (Detailed) | Step-wise metrics for each dataset | Printed outputs from `step_all_metrics` evaluation cells in notebooks |
+| Comparison Table A | Step-24 cross-dataset summary | Derived from the same notebook metric outputs |
+| Comparison Table B | External horizon-24 Exchange benchmarks | MDST-GNN paper, Applied Sciences 2022, Table 3 |
+
+## References
+
+1. LSTNet dataset benchmark repository: https://github.com/laiguokun/multivariate-time-series-data
+2. Lai et al., "Modeling Long- and Short-Term Temporal Patterns with Deep Neural Networks", arXiv:1703.07015, 2017. https://arxiv.org/abs/1703.07015
+3. Shih et al., "Temporal Pattern Attention for Multivariate Time Series Forecasting", arXiv:1809.04206, 2018. https://arxiv.org/abs/1809.04206
+4. Wu et al., "Connecting the Dots: Multivariate Time Series Forecasting with Graph Neural Networks" (MTGNN), arXiv:2005.11650, 2020. https://arxiv.org/abs/2005.11650
+5. Cao et al., "StemGNN: Spectral Temporal Graph Neural Network for Multivariate Time-Series Forecasting", arXiv:2005.11946, 2020. https://arxiv.org/abs/2005.11946
+6. Hossain et al., "MDST-GNN: A Multi-Dimensional Spatial-Temporal Graph Neural Network for Time-Series Forecasting", Applied Sciences 2022, 12(23), 12064. https://doi.org/10.3390/app122312064
